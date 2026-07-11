@@ -5,8 +5,6 @@ These are the source snapshots. They inherit the volume's own encryption state
 forensics CMK; these sources are deleted once the encrypted copies land.
 """
 
-import os
-
 import boto3
 
 ec2 = boto3.client("ec2")

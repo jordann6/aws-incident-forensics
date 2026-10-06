@@ -14,11 +14,25 @@ FORENSICS_KMS_ARN = os.environ["FORENSICS_KMS_ARN"]
 SOURCE_REGION = os.environ.get("AWS_REGION", "us-east-1")
 
 
+class SnapshotNotReady(Exception):
+    """A source snapshot is still pending; CopySnapshot rejects incomplete sources.
+
+    The state machine retries this error on a fixed interval, so the step waits
+    for the source snapshots instead of failing the runbook.
+    """
+
+
 def handler(event, _context):
     instance_id = event["instance_id"]
     source_snapshots = event.get("source_snapshots", [])
     account_id = event.get("account_id")
     ec2 = target.client("ec2", account_id)
+
+    if source_snapshots:
+        resp = ec2.describe_snapshots(SnapshotIds=[s["snapshot_id"] for s in source_snapshots])
+        pending = [s["SnapshotId"] for s in resp["Snapshots"] if s["State"] != "completed"]
+        if pending:
+            raise SnapshotNotReady(f"source snapshots not complete: {pending}")
 
     copies = []
     for snap in source_snapshots:

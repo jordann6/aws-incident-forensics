@@ -112,8 +112,12 @@ resource "aws_sfn_state_machine" "this" {
         InputPath  = "$.snapshots"
         ResultPath = "$.encrypted"
         Next       = "WaitForSnapshots"
-        Retry      = [{ ErrorEquals = ["States.ALL"], MaxAttempts = 2, IntervalSeconds = 5 }]
-        Catch      = [{ ErrorEquals = ["States.ALL"], ResultPath = "$.error", Next = "NotifyFailure" }]
+        Retry = [
+          # CopySnapshot needs completed sources; wait up to ~15 min for them.
+          { ErrorEquals = ["SnapshotNotReady"], MaxAttempts = 45, IntervalSeconds = 20, BackoffRate = 1 },
+          { ErrorEquals = ["States.ALL"], MaxAttempts = 2, IntervalSeconds = 5 },
+        ]
+        Catch = [{ ErrorEquals = ["States.ALL"], ResultPath = "$.error", Next = "NotifyFailure" }]
       }
 
       WaitForSnapshots = {

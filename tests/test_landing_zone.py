@@ -91,3 +91,27 @@ def test_quarantine_lookup_requires_exactly_one_rule_free_group():
     leaky = dict(clean_sg, IpPermissionsEgress=[{"IpProtocol": "-1"}])
     with pytest.raises(RuntimeError):
         isolate._tagged_quarantine_sg(_Ec2([leaky]), "vpc-1")
+
+
+def test_encrypt_waits_for_incomplete_source(monkeypatch):
+    monkeypatch.setenv("FORENSICS_KMS_ARN", "arn:aws:kms:us-east-1:333333333333:key/x")
+    enc = _load("encrypt_snapshots")
+
+    class Ec2:
+        copied = False
+
+        def describe_snapshots(self, SnapshotIds):
+            return {"Snapshots": [{"SnapshotId": SnapshotIds[0], "State": "pending"}]}
+
+        def copy_snapshot(self, **_kw):
+            Ec2.copied = True
+
+    monkeypatch.setattr(enc.target, "client", lambda *_a: Ec2())
+    event = {
+        "instance_id": "i-1",
+        "account_id": PROD,
+        "source_snapshots": [{"snapshot_id": "snap-1", "volume_id": "vol-1"}],
+    }
+    with pytest.raises(enc.SnapshotNotReady):
+        enc.handler(event, None)
+    assert not Ec2.copied

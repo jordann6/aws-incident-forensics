@@ -11,9 +11,7 @@ copy gets stuck; SNAPSHOT_POLL_MAX_ATTEMPTS wait cycles is the ceiling.
 
 import os
 
-import boto3
-
-ec2 = boto3.client("ec2")
+import target
 
 MAX_ATTEMPTS = int(os.environ.get("SNAPSHOT_POLL_MAX_ATTEMPTS", "40"))
 
@@ -26,6 +24,7 @@ def handler(event, _context):
 
     states = {}
     if snapshot_ids:
+        ec2 = target.client("ec2", event.get("account_id"))
         resp = ec2.describe_snapshots(SnapshotIds=snapshot_ids)
         states = {s["SnapshotId"]: s["State"] for s in resp["Snapshots"]}
 
@@ -36,6 +35,7 @@ def handler(event, _context):
     exhausted = (attempts >= MAX_ATTEMPTS) or failed
 
     return {
+        "account_id": event.get("account_id"),
         "copies": copies,
         "attempts": attempts,
         "states": states,

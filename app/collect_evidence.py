@@ -16,18 +16,22 @@ from datetime import datetime, timezone
 
 import boto3
 
-ec2 = boto3.client("ec2")
+import target
+
 s3 = boto3.client("s3")
 
 EVIDENCE_BUCKET = os.environ["EVIDENCE_BUCKET"]
+FORENSICS_KMS_ARN = os.environ["FORENSICS_KMS_ARN"]
 
 
 def handler(event, _context):
     context = event.get("context", {})
     instance_id = context.get("instance_id", "unknown")
+    account_id = context.get("account_id")
+    ec2 = target.client("ec2", account_id)
     captured_at = datetime.now(timezone.utc)
 
-    console_output = _console_output(instance_id)
+    console_output = _console_output(ec2, instance_id)
 
     encrypted = event.get("encrypted", {})
     evidence_snapshots = [
@@ -43,6 +47,7 @@ def handler(event, _context):
         },
         "instance": {
             "id": instance_id,
+            "account_id": account_id,
             "vpc_id": context.get("vpc_id"),
             "role_name": context.get("role_name"),
         },
@@ -66,9 +71,13 @@ def handler(event, _context):
         Key=key,
         Body=json.dumps(manifest, indent=2).encode("utf-8"),
         ContentType="application/json",
+        # Explicit SSE header: organizations that deny PutObject without one
+        # (require-s3-encryption) would otherwise refuse the evidence write.
+        ServerSideEncryption="aws:kms",
+        SSEKMSKeyId=FORENSICS_KMS_ARN,
     )
 
-    deleted = _delete_sources(encrypted.get("copies", []))
+    deleted = _delete_sources(ec2, encrypted.get("copies", []))
 
     return {
         "evidence_key": key,
@@ -78,7 +87,7 @@ def handler(event, _context):
     }
 
 
-def _console_output(instance_id):
+def _console_output(ec2, instance_id):
     """Best-effort console capture; never fail the bundle over it."""
     try:
         resp = ec2.get_console_output(InstanceId=instance_id)
@@ -87,7 +96,7 @@ def _console_output(instance_id):
         return ""
 
 
-def _delete_sources(copies):
+def _delete_sources(ec2, copies):
     deleted = []
     for copy in copies:
         source_id = copy.get("source_snapshot_id")

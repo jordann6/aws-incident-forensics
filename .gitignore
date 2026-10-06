@@ -20,3 +20,12 @@ venv/
 
 # OS
 .DS_Store
+
+# local secrets: never commit
+.env
+.env.*
+!.env.example
+
+# Landing zone inputs (account ids, role ARNs) and saved plans
+*.tfvars.json
+tfplan

@@ -21,13 +21,16 @@ jobs:
           python-version: "3.12"
 
       - name: Install tooling
-        run: pip install ruff bandit
+        run: pip install ruff bandit pytest boto3
 
       - name: ruff (lint)
         run: ruff check app/
 
       - name: bandit (SAST, blocking on medium+)
         run: bandit -r app/ -ll
+
+      - name: unit tests
+        run: pytest -q tests
 
   terraform:
     name: Terraform fmt + validate + scan (blocking)
@@ -44,6 +47,8 @@ jobs:
         run: |
           terraform -chdir=terraform init -backend=false
           terraform -chdir=terraform validate
+          terraform -chdir=terraform/lz init -backend=false
+          terraform -chdir=terraform/lz validate
 
       - name: checkov (IaC scan, HIGH/CRITICAL)
         uses: bridgecrewio/checkov-action@v12

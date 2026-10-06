@@ -6,9 +6,7 @@ finding. This function is the only place that reads the raw finding shape, so
 every downstream step works from a small normalized context object.
 """
 
-import boto3
-
-ec2 = boto3.client("ec2")
+import target
 
 # Findings that describe reconnaissance or benign behavior are not worth the
 # blast radius of isolating a host. Only act at or above this severity; the
@@ -24,9 +22,20 @@ def handler(event, _context):
     resource = detail.get("resource", {})
     instance_details = resource.get("instanceDetails", {})
     instance_id = instance_details.get("instanceId")
+    account_id = detail.get("accountId")
 
     if not instance_id:
         return {"should_respond": False, "reason": "no instance in finding"}
+
+    # In a landing zone, only accounts that were granted a target role are
+    # in scope; a finding anywhere else is reported, never acted on.
+    if target.landing_zone_mode() and not target.has_target(account_id):
+        return {
+            "should_respond": False,
+            "reason": f"account {account_id} has no forensics target role",
+        }
+
+    ec2 = target.client("ec2", account_id)
 
     # Confirm the instance still exists and grab live volume + role details.
     # A finding can lag reality; if the instance is already gone, do nothing.
@@ -63,6 +72,7 @@ def handler(event, _context):
     return {
         "should_respond": severity >= ACT_SEVERITY,
         "instance_id": instance_id,
+        "account_id": account_id,
         "finding_type": finding_type,
         "severity": severity,
         "vpc_id": instance.get("VpcId"),

@@ -8,9 +8,7 @@ victim's original volumes.
 
 import os
 
-import boto3
-
-ec2 = boto3.client("ec2")
+import target
 
 FORENSICS_KMS_ARN = os.environ["FORENSICS_KMS_ARN"]
 SOURCE_REGION = os.environ.get("AWS_REGION", "us-east-1")
@@ -19,6 +17,8 @@ SOURCE_REGION = os.environ.get("AWS_REGION", "us-east-1")
 def handler(event, _context):
     instance_id = event["instance_id"]
     source_snapshots = event.get("source_snapshots", [])
+    account_id = event.get("account_id")
+    ec2 = target.client("ec2", account_id)
 
     copies = []
     for snap in source_snapshots:
@@ -49,6 +49,7 @@ def handler(event, _context):
 
     return {
         "instance_id": instance_id,
+        "account_id": account_id,
         "copies": copies,
         "attempts": 0,
     }

@@ -15,7 +15,6 @@ import os
 from datetime import datetime, timezone
 
 import boto3
-
 import target
 
 s3 = boto3.client("s3")
@@ -105,6 +104,6 @@ def _delete_sources(ec2, copies):
         try:
             ec2.delete_snapshot(SnapshotId=source_id)
             deleted.append(source_id)
-        except Exception:  # noqa: BLE001 - a stuck source is not worth failing the run
-            continue
+        except Exception as exc:  # noqa: BLE001 - a stuck source is not worth failing the run
+            print(f"could not delete source snapshot {source_id}: {exc}")
     return deleted

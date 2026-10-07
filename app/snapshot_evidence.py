@@ -5,15 +5,15 @@ These are the source snapshots. They inherit the volume's own encryption state
 forensics CMK; these sources are deleted once the encrypted copies land.
 """
 
-import boto3
-
-ec2 = boto3.client("ec2")
+import target
 
 
 def handler(event, _context):
     instance_id = event["instance_id"]
     volume_ids = event.get("volume_ids", [])
     finding_type = event.get("finding_type", "unknown")
+    account_id = event.get("account_id")
+    ec2 = target.client("ec2", account_id)
 
     snapshots = []
     for volume_id in volume_ids:
@@ -35,5 +35,6 @@ def handler(event, _context):
 
     return {
         "instance_id": instance_id,
+        "account_id": account_id,
         "source_snapshots": snapshots,
     }

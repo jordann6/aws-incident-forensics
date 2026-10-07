@@ -1,6 +1,6 @@
 output "state_machine_arn" {
   description = "Forensics Step Functions state machine"
-  value       = aws_sfn_state_machine.forensics.arn
+  value       = module.runbook.arn
 }
 
 output "evidence_bucket" {

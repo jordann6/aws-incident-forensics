@@ -22,7 +22,7 @@ resource "aws_cloudwatch_event_rule" "guardduty_ec2_high" {
 
 resource "aws_cloudwatch_event_target" "start_forensics" {
   rule     = aws_cloudwatch_event_rule.guardduty_ec2_high.name
-  arn      = aws_sfn_state_machine.forensics.arn
+  arn      = module.runbook.arn
   role_arn = aws_iam_role.eventbridge_invoke.arn
 }
 
@@ -48,7 +48,7 @@ resource "aws_iam_role_policy" "eventbridge_invoke" {
     Statement = [{
       Effect   = "Allow"
       Action   = "states:StartExecution"
-      Resource = aws_sfn_state_machine.forensics.arn
+      Resource = module.runbook.arn
     }]
   })
 }

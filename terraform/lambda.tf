@@ -2,8 +2,18 @@ data "archive_file" "lambda" {
   for_each = local.lambdas
 
   type        = "zip"
-  source_file = "${path.module}/../app/${each.key}.py"
   output_path = "${path.module}/../build/${each.key}.zip"
+
+  source {
+    content  = file("${path.module}/../app/${each.key}.py")
+    filename = "${each.key}.py"
+  }
+
+  # Shared client helper: same-account here, cross-account in the landing zone.
+  source {
+    content  = file("${path.module}/../app/target.py")
+    filename = "target.py"
+  }
 }
 
 resource "aws_lambda_function" "this" {

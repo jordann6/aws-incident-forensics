@@ -8,6 +8,24 @@ every time and leave an auditable trail.
 
 ![Architecture](docs/architecture.png)
 
+## Landing zone mode
+
+`terraform/lz` runs this runbook as a standing control in the security account of the
+[aws-landing-zone](https://github.com/jordann6/aws-landing-zone) organization instead of a
+standalone demo. Each Step Functions step gets its own narrow role in the target account
+(`/forensics/` path), GuardDuty findings reach the runbook over a cross-account bus, and
+the evidence bucket and KMS key live in the security account.
+
+Proven live on 2026-10-06 in the landing zone: a sample GuardDuty finding started an
+execution, and a drill isolated a prod instance (quarantine security group, tags, a
+session-revocation deny keyed to the token issue time), copied an encrypted snapshot under
+the evidence key, wrote a manifest, and deleted its own source snapshot.
+
+The live drill found a real bug: the encrypt step ran while the source snapshot was still
+pending ("Source snapshot is not complete"). The fix is a `SnapshotNotReady` retry
+(20 seconds, up to 45 attempts). The first run still contained the instance; only the
+evidence step failed, which is why containment runs before capture.
+
 ## Cost and teardown risk, up front
 
 Built to deploy, demo, and destroy. Everything is serverless or tiny:

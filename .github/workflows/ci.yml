@@ -21,7 +21,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install tooling
-        run: pip install ruff bandit pytest boto3
+        run: pip install ruff==0.17.1 bandit pytest boto3
 
       - name: ruff (lint)
         run: ruff check app/

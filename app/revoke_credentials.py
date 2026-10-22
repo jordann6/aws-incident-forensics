@@ -14,7 +14,7 @@ independently.
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import target
 
@@ -39,7 +39,7 @@ def handler(event, _context):
             "reason": f"role path {role['Role']['Path']} outside containment boundary",
         }
 
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     policy = {
         "Version": "2012-10-17",

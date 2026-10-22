@@ -30,10 +30,11 @@ the evidence key, wrote a manifest, and deleted its own source snapshot.
 
 **The encrypt step ran before the snapshot existed.** `CopySnapshot` rejects a
 source that is still pending, and the first live drill failed with "Source
-snapshot is not complete". Unit tests mock the EC2 API, so nothing caught it
-before a real snapshot was involved. The encrypt step now raises
+snapshot is not complete". No test had covered snapshot timing, because
+nothing waits on a pending snapshot until a real one exists. The encrypt step now raises
 `SnapshotNotReady` while any source is pending, and the state machine retries
-it every 20 seconds, up to 45 attempts.
+it every 20 seconds, up to 45 attempts, and
+`test_encrypt_waits_for_incomplete_source` guards the behaviour.
 
 The ordering paid off here: the first run had already contained the instance,
 so only evidence capture failed. Had capture run first, the host would have

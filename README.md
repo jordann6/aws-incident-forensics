@@ -8,6 +8,11 @@ every time and leave an auditable trail.
 
 ![Architecture](docs/architecture.png)
 
+The runbook reads left to right in execution order, and each step's effect sits
+beneath it. Containment comes first: the instance loses all network access
+before anything else runs. Every terminal path ends in an SNS notice, so a
+failure is never silent.
+
 ## Landing zone mode
 
 `terraform/lz` runs this runbook as a standing control in the security account of the
@@ -21,10 +26,18 @@ execution, and a drill isolated a prod instance (quarantine security group, tags
 session-revocation deny keyed to the token issue time), copied an encrypted snapshot under
 the evidence key, wrote a manifest, and deleted its own source snapshot.
 
-The live drill found a real bug: the encrypt step ran while the source snapshot was still
-pending ("Source snapshot is not complete"). The fix is a `SnapshotNotReady` retry
-(20 seconds, up to 45 attempts). The first run still contained the instance; only the
-evidence step failed, which is why containment runs before capture.
+## What the live drill found
+
+**The encrypt step ran before the snapshot existed.** `CopySnapshot` rejects a
+source that is still pending, and the first live drill failed with "Source
+snapshot is not complete". Unit tests mock the EC2 API, so nothing caught it
+before a real snapshot was involved. The encrypt step now raises
+`SnapshotNotReady` while any source is pending, and the state machine retries
+it every 20 seconds, up to 45 attempts.
+
+The ordering paid off here: the first run had already contained the instance,
+so only evidence capture failed. Had capture run first, the host would have
+stayed online while the runbook errored.
 
 ## Cost and teardown risk, up front
 

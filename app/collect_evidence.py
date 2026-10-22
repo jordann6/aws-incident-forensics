@@ -12,7 +12,7 @@ this function delete only snapshots tagged forensics:stage=source.
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import boto3
 import target
@@ -28,7 +28,7 @@ def handler(event, _context):
     instance_id = context.get("instance_id", "unknown")
     account_id = context.get("account_id")
     ec2 = target.client("ec2", account_id)
-    captured_at = datetime.now(timezone.utc)
+    captured_at = datetime.now(UTC)
 
     console_output = _console_output(ec2, instance_id)
 

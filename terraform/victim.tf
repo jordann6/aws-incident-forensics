@@ -84,6 +84,17 @@ resource "aws_instance" "victim" {
     http_endpoint = "enabled"
   }
 
+  # Plants the decoy key where an attacker looks first. The secret also sits in
+  # instance user data, which is fine: that is one more place a real intruder
+  # would read it from, and either way it can only trip the alarm.
+  user_data = local.decoy_enabled ? templatefile("${path.module}/templates/plant_decoy.sh.tftpl", {
+    profile    = var.decoy_profile_name
+    key_id     = aws_iam_access_key.decoy[0].id
+    secret     = aws_iam_access_key.decoy[0].secret
+    aws_region = var.aws_region
+  }) : null
+  user_data_replace_on_change = true
+
   root_block_device {
     volume_type = "gp3"
     volume_size = 8

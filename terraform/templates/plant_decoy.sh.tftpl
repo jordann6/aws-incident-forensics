@@ -1,0 +1,20 @@
+#!/bin/bash
+# Write the decoy credentials for root and ec2-user, the two homes an intruder
+# checks first. Same key in both places: it identifies this server, not a user.
+set -euo pipefail
+
+for home in /root /home/ec2-user; do
+  mkdir -p "$home/.aws"
+  cat > "$home/.aws/credentials" <<'CREDS'
+[${profile}]
+aws_access_key_id = ${key_id}
+aws_secret_access_key = ${secret}
+CREDS
+  cat > "$home/.aws/config" <<'CONF'
+[profile ${profile}]
+region = ${aws_region}
+output = json
+CONF
+  chmod 600 "$home/.aws/credentials" "$home/.aws/config"
+done
+chown -R ec2-user:ec2-user /home/ec2-user/.aws

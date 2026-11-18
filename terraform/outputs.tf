@@ -27,3 +27,24 @@ output "event_bus_name" {
   description = "Event bus the demo script targets when injecting a synthetic finding"
   value       = "default"
 }
+
+output "decoy_access_key_id" {
+  description = "Decoy access key id planted on the victim (empty when the decoy is off)"
+  value       = local.decoy_enabled ? aws_iam_access_key.decoy[0].id : ""
+}
+
+output "decoy_secret_access_key" {
+  description = "Decoy secret, only for scripts/trip_decoy.sh to play the attacker. Zero permissions."
+  value       = local.decoy_enabled ? aws_iam_access_key.decoy[0].secret : ""
+  sensitive   = true
+}
+
+output "aws_region" {
+  description = "Region the pipeline and victim run in"
+  value       = var.aws_region
+}
+
+output "decoy_user_name" {
+  description = "Zero-permission IAM user that owns the decoy key"
+  value       = local.decoy_enabled ? aws_iam_user.decoy[0].name : ""
+}

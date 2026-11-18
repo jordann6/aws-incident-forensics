@@ -57,5 +57,17 @@ OBJS="$(aws s3api list-objects-v2 --bucket "$EVIDENCE_BUCKET" \
   --prefix "evidence/$INSTANCE_ID/" --query 'length(Contents)' --output text 2>/dev/null || echo 0)"
 [[ "$OBJS" != "None" && "$OBJS" -ge 1 ]] && pass "evidence objects=$OBJS" || fail "evidence objects=$OBJS"
 
+echo "8. Decoy key (if deployed) still has zero permissions"
+DECOY_KEY="$(terraform output -raw decoy_access_key_id 2>/dev/null || true)"
+if [[ -n "$DECOY_KEY" ]]; then
+  DECOY_USER="$(terraform output -raw decoy_user_name)"
+  N=$(( $(aws iam list-attached-user-policies --user-name "$DECOY_USER" --query 'length(AttachedPolicies)' --output text) \
+      + $(aws iam list-user-policies --user-name "$DECOY_USER" --query 'length(PolicyNames)' --output text) \
+      + $(aws iam list-groups-for-user --user-name "$DECOY_USER" --query 'length(Groups)' --output text) ))
+  [[ "$N" == "0" ]] && pass "$DECOY_USER has no policies or groups" || fail "$DECOY_USER has $N policies/groups"
+else
+  echo "  SKIP  no decoy deployed"
+fi
+
 echo
 [[ "$FAILED" == "0" ]] && echo "All checks passed." || { echo "Some checks failed."; exit 1; }

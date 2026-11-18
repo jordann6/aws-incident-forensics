@@ -124,6 +124,12 @@ Decisions that matter:
 
 Limits, stated plainly:
 
+- **A tripwire, not a lock.** It detects, it does not protect a real key
+  sitting next to it. The decoy should be the only static key on the box; real
+  access comes from the instance role, whose sessions the runbook revokes the
+  moment the decoy fires. An attacker who uses a real key before testing the
+  decoy gets a head start of a few minutes, which is one more reason not to
+  keep real keys on servers.
 - **Not instant.** CloudTrail to EventBridge is usually a few minutes.
   `scripts/trip_decoy.sh` measures it.
 - **Needs a trail.** CloudTrail events reach EventBridge only if a trail is

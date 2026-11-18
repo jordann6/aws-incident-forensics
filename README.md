@@ -1,6 +1,7 @@
 # AWS Incident Response and Forensics Automation
 
-A GuardDuty finding against an EC2 instance triggers a Step Functions runbook
+A GuardDuty finding against an EC2 instance, or any use of a decoy access key
+planted on it, triggers a Step Functions runbook
 that contains the host, captures evidence, and revokes leaked credentials
 without a human in the hot path. The steps run in the order an incident
 responder would run them by hand, encoded as state so they run the same way
@@ -49,9 +50,10 @@ Built to deploy, demo, and destroy. Everything is serverless or tiny:
 - One `t3.micro` demo victim and a couple of 8 GiB snapshots: a few cents.
 - The forensics KMS key: $1/month prorated, plus a 7-day deletion window on destroy (unbilled while pending).
 
-Rough cost for a deploy-demo-destroy session: under a quarter. The only thing
-that lingers after `terraform destroy` is the KMS key in its 7-day pending
-deletion window, which is free.
+Rough cost for a deploy-demo-destroy session: under a quarter. Two things
+outlive `terraform destroy`. The KMS key sits in its 7-day pending deletion
+window, which is free. The encrypted evidence snapshot the runbook made is not
+in Terraform state, so delete it by hand (see Destroy).
 
 ## Why this order
 
@@ -89,6 +91,84 @@ instance role, and we want the role state recorded before we change it.
 Every terminal path publishes to SNS: a `[CONTAINED]` summary on success or a
 `[FAILED]` notice with the full execution state on error.
 
+## Decoy credential tripwire
+
+GuardDuty tells you about behavior it recognizes. A decoy key tells you the
+moment someone reads a file they should never have seen. `terraform/decoy.tf`
+plants a real access key, on an IAM user with zero policies, in
+`.aws/credentials` on the victim. Nothing legitimate ever uses it, so any API
+call signed with it means the box is compromised.
+
+The path is CloudTrail, then an EventBridge rule matching that one access key
+id, then `app/decoy_tripwire.py`. The tripwire looks up which instance the key
+was planted on (an SSM parameter keyed by access key id), sends a
+`[DECOY KEY USED]` alert, and starts this same runbook with a GuardDuty-shaped
+finding. The instance gets isolated, snapshotted, and its role sessions revoked
+exactly as if GuardDuty had fired.
+
+Decisions that matter:
+
+- **One key per server.** The alert can only name the box to isolate because
+  each key maps to exactly one instance. A shared decoy key would tell you
+  something was compromised and nothing about where.
+- **A believable name.** AccessDenied errors and `sts:GetCallerIdentity` echo the
+  user ARN back to the caller. A user called `decoy` or `honeytoken` tells the
+  attacker it is a trap, so the default is `svc-prod-backup`.
+- **The rule state is `ENABLED_WITH_ALL_CLOUDTRAIL_MANAGEMENT_EVENTS`.** An
+  attacker's first call is usually `GetCallerIdentity` or a `List`, and a rule
+  in the plain `ENABLED` state never sees read-only calls.
+- **Isolate the server, not the account.** The key cannot do anything, so
+  disabling it protects nothing. The damage is on the host it was stolen from.
+- **One execution per instance per day.** Attackers make calls in bursts. The
+  execution name is `decoy-<instance>-<UTC day>`, so the first call starts the
+  runbook and the rest are no-ops instead of a pile of duplicate snapshots.
+
+Proven live on 2026-11-18 in standalone mode. `trip_decoy.sh` called
+`sts get-caller-identity` (succeeded, echoing `user/svc-prod-backup`) and
+`s3 ls` (AccessDenied) with the decoy key. The runbook started 4 seconds after
+the first call and finished containment at 155 seconds. The second call was
+logged as a duplicate, so one burst produced one execution. `validate.sh`
+passed all eight checks, including that the decoy user still has zero
+policies. Destroyed the same session: 69 resources, plus the one evidence
+snapshot by hand.
+
+Deploying it found three bugs, none of them in the decoy code:
+
+- **No default subnets.** The landing zone deletes the default VPC's subnets,
+  so `data.aws_subnets.default.ids[0]` failed on an empty list. The fix creates
+  one throwaway victim subnet when none exist.
+- **The fix fought itself.** On the next plan the subnet lookup found the new
+  demo subnet, the count flipped to 0, and Terraform planned to destroy it.
+  Filtering on `default-for-az` keeps the lookup to real default subnets.
+- **Step Functions refused the state machine:** "The state machine IAM Role is
+  not authorized to access the Log Destination." The runbook module turns on
+  logging and X-Ray tracing, and only the landing zone role granted them. The
+  standalone role now does too.
+
+Limits, stated plainly:
+
+- **A tripwire, not a lock.** It detects, it does not protect a real key
+  sitting next to it. The decoy should be the only static key on the box; real
+  access comes from the instance role, whose sessions the runbook revokes the
+  moment the decoy fires. An attacker who uses a real key before testing the
+  decoy gets a head start, which is one more reason not to keep real keys on
+  servers.
+- **Fast, not instant.** The live run below started the runbook 4 seconds
+  after the first decoy call. EventBridge gets CloudTrail events on its own
+  path; the minutes-long delay people quote is for log files landing in S3.
+  `scripts/trip_decoy.sh` measures it every run.
+- **Needs a trail.** CloudTrail events reach EventBridge only if a trail is
+  logging management events (read and write) in the account.
+- **One region in standalone mode.** The rule lives in the deploy region, and the
+  planted config sets that region. A caller who passes another `--region`
+  lands in that region's EventBridge. Covering every region means a forwarding
+  rule per region to the home bus, which belongs in the landing zone.
+- **Can be fingerprinted.** `sts:GetAccessKeyInfo` returns the account id for
+  a key and is logged in the caller's account, not this one. A careful
+  attacker can learn which account a key belongs to without tripping anything.
+- **The secret is in Terraform state and instance user data.** Both are already
+  sensitive, and the key can only raise the alarm.
+
 ## Containment boundary
 
 The one destructive capability in the pipeline, credential revocation, is
@@ -104,7 +184,7 @@ use, deliberately, rather than granting `iam:PutRolePolicy` on `*`.
 
 ## Least privilege
 
-Each of the seven Lambdas has its own execution role with only that step's
+Each of the eight Lambdas (seven runbook steps plus the decoy tripwire) has its own execution role with only that step's
 permissions. The snapshot function cannot touch KMS; the revocation function
 cannot read S3; the evidence collector can delete only snapshots tagged
 `forensics:stage=source`. A compromise of any single function is contained to
@@ -137,19 +217,35 @@ does not depend on it.
 
 ```sh
 scripts/demo.sh          # injects a synthetic High finding for the victim
-scripts/validate.sh      # asserts the seven outcomes below
+scripts/trip_decoy.sh    # or: use the planted decoy key like an attacker would
+scripts/validate.sh      # asserts the outcomes below
 ```
 
 `validate.sh` confirms: the execution succeeded, the instance is on the
 quarantine SG and tagged, an encrypted evidence snapshot exists, the
 unencrypted source snapshots were cleaned up, the instance role carries the
-revocation policy, and an evidence manifest landed in S3.
+revocation policy, an evidence manifest landed in S3, and the decoy user still
+has zero policies.
+
+`trip_decoy.sh` calls `sts get-caller-identity` and `s3 ls` with the decoy
+key, then prints how many seconds passed before the runbook started and
+before it finished.
 
 ## Destroy
 
 ```sh
 cd terraform
 terraform destroy -var="alert_email=you@example.com"
+```
+
+Then delete the evidence snapshots the runbook created, which Terraform never
+owned:
+
+```sh
+aws ec2 describe-snapshots --owner-ids self \
+  --filters Name=tag:forensics:stage,Values=evidence \
+  --query 'Snapshots[].SnapshotId' --output text \
+  | xargs -n1 aws ec2 delete-snapshot --snapshot-id
 ```
 
 `force_destroy` is set on the evidence bucket so teardown is clean. The KMS key

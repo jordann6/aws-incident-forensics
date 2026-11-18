@@ -38,3 +38,27 @@ variable "snapshot_poll_max_attempts" {
   type        = number
   default     = 40
 }
+
+variable "deploy_decoy" {
+  description = "Plant a decoy access key on the demo victim and alarm on any use of it (needs deploy_victim and a CloudTrail trail logging management events)"
+  type        = bool
+  default     = true
+}
+
+variable "decoy_user_name" {
+  description = "Name of the zero-permission decoy IAM user. Keep it believable: AccessDenied errors echo the user ARN to the caller."
+  type        = string
+  default     = "svc-prod-backup"
+}
+
+variable "decoy_profile_name" {
+  description = "Profile name the decoy key is written under in .aws/credentials"
+  type        = string
+  default     = "prod-backup"
+}
+
+variable "demo_subnet_cidr" {
+  description = "CIDR for the throwaway victim subnet, created only when the default VPC has no subnets"
+  type        = string
+  default     = "172.31.240.0/24"
+}

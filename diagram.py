@@ -9,6 +9,7 @@ with each step's effect drawn beneath it.
 from diagrams import Cluster, Diagram, Edge
 from diagrams.aws.compute import EC2, Lambda
 from diagrams.aws.integration import SNS, Eventbridge
+from diagrams.aws.management import Cloudtrail
 from diagrams.aws.security import IAM, KMS, Guardduty
 from diagrams.aws.storage import EBS, S3
 
@@ -42,7 +43,12 @@ with Diagram(
     bucket = S3("Evidence bucket\nSSE-KMS")
     notify = SNS("[CONTAINED] or\n[FAILED] notice")
 
+    decoy = Cloudtrail("Decoy key used\n(planted .aws/credentials)")
+    decoy_rule = Eventbridge("Rule incl. read-only\nCloudTrail calls")
+    tripwire = Lambda("Tripwire\nkey -> instance")
+
     guardduty >> rule >> isolate
+    decoy >> decoy_rule >> tripwire >> isolate
     isolate >> Edge(color=EFFECT) >> victim
     snapshot >> Edge(color=EFFECT) >> snaps
     encrypt >> Edge(color=EFFECT) >> cmk

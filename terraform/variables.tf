@@ -56,3 +56,9 @@ variable "decoy_profile_name" {
   type        = string
   default     = "prod-backup"
 }
+
+variable "demo_subnet_cidr" {
+  description = "CIDR for the throwaway victim subnet, created only when the default VPC has no subnets"
+  type        = string
+  default     = "172.31.240.0/24"
+}

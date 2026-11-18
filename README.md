@@ -50,9 +50,10 @@ Built to deploy, demo, and destroy. Everything is serverless or tiny:
 - One `t3.micro` demo victim and a couple of 8 GiB snapshots: a few cents.
 - The forensics KMS key: $1/month prorated, plus a 7-day deletion window on destroy (unbilled while pending).
 
-Rough cost for a deploy-demo-destroy session: under a quarter. The only thing
-that lingers after `terraform destroy` is the KMS key in its 7-day pending
-deletion window, which is free.
+Rough cost for a deploy-demo-destroy session: under a quarter. Two things
+outlive `terraform destroy`. The KMS key sits in its 7-day pending deletion
+window, which is free. The encrypted evidence snapshot the runbook made is not
+in Terraform state, so delete it by hand (see Destroy).
 
 ## Why this order
 
@@ -128,7 +129,8 @@ Proven live on 2026-11-18 in standalone mode. `trip_decoy.sh` called
 the first call and finished containment at 155 seconds. The second call was
 logged as a duplicate, so one burst produced one execution. `validate.sh`
 passed all eight checks, including that the decoy user still has zero
-policies.
+policies. Destroyed the same session: 69 resources, plus the one evidence
+snapshot by hand.
 
 Deploying it found three bugs, none of them in the decoy code:
 
@@ -234,6 +236,16 @@ before it finished.
 ```sh
 cd terraform
 terraform destroy -var="alert_email=you@example.com"
+```
+
+Then delete the evidence snapshots the runbook created, which Terraform never
+owned:
+
+```sh
+aws ec2 describe-snapshots --owner-ids self \
+  --filters Name=tag:forensics:stage,Values=evidence \
+  --query 'Snapshots[].SnapshotId' --output text \
+  | xargs -n1 aws ec2 delete-snapshot --snapshot-id
 ```
 
 `force_destroy` is set on the evidence bucket so teardown is clean. The KMS key

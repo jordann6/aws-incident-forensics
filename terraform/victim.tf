@@ -6,10 +6,16 @@ data "aws_vpc" "default" {
   default = true
 }
 
+# default-for-az matters: without it this lookup also finds the demo subnet
+# below once it exists, the count flips to 0, and the next plan destroys it.
 data "aws_subnets" "default" {
   filter {
     name   = "vpc-id"
     values = [data.aws_vpc.default.id]
+  }
+  filter {
+    name   = "default-for-az"
+    values = ["true"]
   }
 }
 

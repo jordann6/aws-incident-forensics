@@ -229,6 +229,21 @@ resource "aws_iam_role_policy" "sfn" {
         Action   = "sns:Publish"
         Resource = aws_sns_topic.alerts.arn
       },
+      {
+        # The runbook module turns on execution logging and X-Ray tracing.
+        # Step Functions checks these at create time and refuses the state
+        # machine without them. Log delivery APIs do not support resource-level
+        # scoping, so Resource is "*" (same as the landing zone role).
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogDelivery", "logs:GetLogDelivery", "logs:UpdateLogDelivery",
+          "logs:DeleteLogDelivery", "logs:ListLogDeliveries", "logs:PutResourcePolicy",
+          "logs:DescribeResourcePolicies", "logs:DescribeLogGroups",
+          "xray:PutTraceSegments", "xray:PutTelemetryRecords",
+          "xray:GetSamplingRules", "xray:GetSamplingTargets",
+        ]
+        Resource = "*"
+      },
     ]
   })
 }

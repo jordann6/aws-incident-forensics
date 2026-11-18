@@ -122,16 +122,39 @@ Decisions that matter:
   execution name is `decoy-<instance>-<UTC day>`, so the first call starts the
   runbook and the rest are no-ops instead of a pile of duplicate snapshots.
 
+Proven live on 2026-11-18 in standalone mode. `trip_decoy.sh` called
+`sts get-caller-identity` (succeeded, echoing `user/svc-prod-backup`) and
+`s3 ls` (AccessDenied) with the decoy key. The runbook started 4 seconds after
+the first call and finished containment at 155 seconds. The second call was
+logged as a duplicate, so one burst produced one execution. `validate.sh`
+passed all eight checks, including that the decoy user still has zero
+policies.
+
+Deploying it found three bugs, none of them in the decoy code:
+
+- **No default subnets.** The landing zone deletes the default VPC's subnets,
+  so `data.aws_subnets.default.ids[0]` failed on an empty list. The fix creates
+  one throwaway victim subnet when none exist.
+- **The fix fought itself.** On the next plan the subnet lookup found the new
+  demo subnet, the count flipped to 0, and Terraform planned to destroy it.
+  Filtering on `default-for-az` keeps the lookup to real default subnets.
+- **Step Functions refused the state machine:** "The state machine IAM Role is
+  not authorized to access the Log Destination." The runbook module turns on
+  logging and X-Ray tracing, and only the landing zone role granted them. The
+  standalone role now does too.
+
 Limits, stated plainly:
 
 - **A tripwire, not a lock.** It detects, it does not protect a real key
   sitting next to it. The decoy should be the only static key on the box; real
   access comes from the instance role, whose sessions the runbook revokes the
   moment the decoy fires. An attacker who uses a real key before testing the
-  decoy gets a head start of a few minutes, which is one more reason not to
-  keep real keys on servers.
-- **Not instant.** CloudTrail to EventBridge is usually a few minutes.
-  `scripts/trip_decoy.sh` measures it.
+  decoy gets a head start, which is one more reason not to keep real keys on
+  servers.
+- **Fast, not instant.** The live run below started the runbook 4 seconds
+  after the first decoy call. EventBridge gets CloudTrail events on its own
+  path; the minutes-long delay people quote is for log files landing in S3.
+  `scripts/trip_decoy.sh` measures it every run.
 - **Needs a trail.** CloudTrail events reach EventBridge only if a trail is
   logging management events (read and write) in the account.
 - **One region in standalone mode.** The rule lives in the deploy region, and the
